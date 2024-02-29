@@ -25,7 +25,7 @@ server_prop:
 generic_prop:
     # Node name and namespace. The namespace will automatically adding prefix at node name, topic name, service name, etc..
     namespace : "V0"
-    nodeName : "controller"
+    nodeName : "external_controller"
 
     # Device ID, the ID will automatically formed the name of nodes and publisher topics. For instance, 
     # the node name will be formed as "<nodeName>_<id>_node", and the publisher topic name will be formed as "<topic_name>_<id>". 
