@@ -267,6 +267,9 @@ private:
                 tmp.func_2 = 0;
                 tmp.func_3 = 0;
 
+                if (tmp.pedal_brake > 10)// Brake pedal is pressed. Trigger interrupt signal.
+                    tmp.controller_interrupt = true;
+
                 auto subChassisMsg = this->_safeCall(&this->chassisMsg_, this->chassisMsgLock_);
 
                 char buf[1024];
