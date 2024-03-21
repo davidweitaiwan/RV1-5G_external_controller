@@ -208,9 +208,6 @@ private:
             catch (...)
             {
                 RCLCPP_ERROR(this->get_logger(), "[Controller::RecvMsgEventHandler] Remote device register failed: %s", fromDevice.c_str());
-                auto table = idc->getIDTable();
-                for (auto& i : table)
-                    std::cerr << " [" << i << "] ";
             }
         }
         else if (this->remoteF_ && recvMsg == "RequestComposition")// Response chassis composition
@@ -232,8 +229,19 @@ private:
             for (int i = 0; i < this->chassisInfo_.vehicle_type; i++)
                 sendStr += "@B!B" + std::to_string(i) + "_1:";
             sendStr.pop_back();
-            
-            idc->sendMsgToClient(fromDevice, sendStr);
+
+            try
+            {
+                idc->sendMsgToClient(fromDevice, sendStr);
+            }
+            catch (const IDClientException& e)
+            {
+                RCLCPP_ERROR(this->get_logger(), "[Controller::RecvMsgEventHandler] Chassis composition send failed: %d", e);
+            }
+            catch (...)
+            {
+                RCLCPP_ERROR(this->get_logger(), "[Controller::RecvMsgEventHandler] Chassis composition send failed.");
+            }
 
             // Update external signal timestamp.
             std::lock_guard<std::mutex> lock(this->controlSteeringWheelMsgLock_);
@@ -349,7 +357,23 @@ private:
             return;
         }
 
-        std::lock_guard<std::mutex> lock(this->controlSteeringWheelMsgLock_);// Lock controlSteeringWheelMsg_.
+        try
+        {
+            this->idclient_->requestIDTableFromServer();
+        }
+        catch (const IDClientException& e)
+        {
+            this->idclientF_ = false;
+            RCLCPP_ERROR(this->get_logger(), "[Controller::_idclientCbFunc] ID client exception: %d", e);
+        }
+        catch (...)
+        {
+            this->idclientF_ = false;
+            RCLCPP_ERROR(this->get_logger(), "[Controller::_idclientCbFunc] Caught unexpected error.");
+        }
+
+        std::unique_lock<std::mutex> lock(this->controlSteeringWheelMsgLock_, std::defer_lock);// Lock controlSteeringWheelMsg_.
+        lock.lock();
         if (this->remoteF_ && std::chrono::high_resolution_clock::now() - this->controlSteeringWheelMsgTs_ > std::chrono::duration<double, std::milli>(this->params_->externalTimeout_ms))
         {
             this->controlSteeringWheelMsg_ = vehicle_interfaces::msg::ControlSteeringWheel();
@@ -359,6 +383,7 @@ private:
             this->remoteF_ = false;
             RCLCPP_ERROR(this->get_logger(), "[Controller::_idclientCbFunc] Remote device timeout.");
         }
+        lock.unlock();
     }
 
     /**
@@ -400,7 +425,7 @@ public:
         // Create idclient timer.
         this->idclientTmPeriod_ms_ = params->period_ms;
         RCLCPP_INFO(this->get_logger(), "[Controller] Initializing idclient timer...");
-        this->idclientTm_ = new vehicle_interfaces::Timer(params->period_ms, std::bind(&Controller::_idclientCbFunc, this));
+        this->idclientTm_ = new vehicle_interfaces::Timer(params->period_ms * 2, std::bind(&Controller::_idclientCbFunc, this));
         this->idclientTm_->start();
 
         vehicle_interfaces::msg::ControllerInfo conInfo;
