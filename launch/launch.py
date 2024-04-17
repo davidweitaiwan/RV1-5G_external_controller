@@ -41,7 +41,8 @@ def generate_launch_description():
                     "externalID" : data['input_prop']['ID'], 
                     "externalTimeout_ms" : data['input_prop']['timeout_ms'], 
 
-                    "controlService" : data['server_prop']['serviceName'], 
+                    "controlService" : data['controlserver_prop']['controlService'], 
+                    "controllerRegService" : data['controlserver_prop']['controllerRegService'], 
 
                     # Settings for Params class under vehicle_interfaces/params.h
                     # Do not change the settings rashly

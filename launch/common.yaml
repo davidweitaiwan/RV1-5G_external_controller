@@ -18,8 +18,9 @@ input_prop:
     ID : "@4!CAR1"
     timeout_ms : 2000.0
 
-server_prop:
-    serviceName : "controlserver_0" # The service name of the control server.
+controlserver_prop:
+    controlService : "controlserver_0" # The service name of the control server.
+    controllerRegService : "controlserver_0_ControllerInfoReg" # The service name of the controller registration.
 
 # Settings for Params class under vehicle_interfaces/params.h
 generic_prop:

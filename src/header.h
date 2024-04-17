@@ -18,6 +18,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "vehicle_interfaces/control.h"
+#include "vehicle_interfaces/timer.h"
 #include "vehicle_interfaces/utils.h"
 
 #include "vehicle_interfaces/msg/chassis_info.hpp"
@@ -62,6 +63,7 @@ public:
     double externalTimeout_ms = 2000.0;
 
     std::string controlService = "controlserver_0";
+    std::string controllerRegService = "controlserver_0_ControllerInfoReg";
 
 private:
     void _getParams()
@@ -78,6 +80,7 @@ private:
         this->get_parameter("externalID", this->externalID);
         this->get_parameter("externalTimeout_ms", this->externalTimeout_ms);
         this->get_parameter("controlService", this->controlService);
+        this->get_parameter("controllerRegService", this->controllerRegService);
     }
 
     rcl_interfaces::msg::SetParametersResult _paramsCallback(const std::vector<rclcpp::Parameter>& params)
@@ -121,6 +124,7 @@ public:
         this->declare_parameter<std::string>("externalID", this->externalID);
         this->declare_parameter<double>("externalTimeout_ms", this->externalTimeout_ms);
         this->declare_parameter<std::string>("controlService", this->controlService);
+        this->declare_parameter<std::string>("controllerRegService", this->controllerRegService);
         this->_getParams();
 
         this->_paramsCallbackHandler = this->add_on_set_parameters_callback(std::bind(&Params::_paramsCallback, this, std::placeholders::_1));
@@ -139,8 +143,8 @@ class Controller : public vehicle_interfaces::VehicleServiceNode
 private:
     const std::shared_ptr<Params> params_;// Controller parameters.
     std::shared_ptr<vehicle_interfaces::SteeringWheelControllerServer> controller_;// Communicate with ControlServerController.
-    rclcpp::executors::SingleThreadedExecutor* executor_;// Executor for Controller.
-    std::thread* execTh_;// Executor thread.
+    std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> executor_;// Executor for Controller.
+    vehicle_interfaces::unique_thread execTh_;// Executor thread.
     vehicle_interfaces::msg::ControlSteeringWheel controlSteeringWheelMsg_;// ControlSteeringWheel message.
     std::chrono::high_resolution_clock::time_point controlSteeringWheelMsgTs_;// Timestamp of controlSteeringWheelMsg_.
     std::mutex controlSteeringWheelMsgLock_;// Lock controlSteeringWheelMsg_.
@@ -396,12 +400,10 @@ private:
     }
 
 public:
-    Controller(const std::shared_ptr<Params>& params) : 
+    Controller(const std::shared_ptr<Params> params) : 
         vehicle_interfaces::VehicleServiceNode(params), 
         rclcpp::Node(params->nodeName), 
         params_(params), 
-        executor_(nullptr), 
-        execTh_(nullptr), 
         chassisInfoF_(false), 
         idclient_(nullptr), 
         idclientF_(false), 
@@ -431,6 +433,7 @@ public:
         vehicle_interfaces::msg::ControllerInfo conInfo;
         conInfo.msg_type = params->msg_type;
         conInfo.controller_mode = params->controller_mode;
+        conInfo.node_name = params->service_name + "_controllerserver";
         conInfo.service_name = params->service_name;
         conInfo.timeout_ms = params->timeout_ms;
         conInfo.period_ms = params->period_ms;
@@ -439,18 +442,18 @@ public:
 
         if (conInfo.msg_type == vehicle_interfaces::msg::ControllerInfo::MSG_TYPE_STEERING_WHEEL)
         {
-            this->controller_ = std::make_shared<vehicle_interfaces::SteeringWheelControllerServer>(conInfo, params->controlService);
+            this->controller_ = std::make_shared<vehicle_interfaces::SteeringWheelControllerServer>(conInfo);
             this->controller_->setControlSignal(this->controlSteeringWheelMsg_);// Default control signal.
-            this->executor_ = new rclcpp::executors::SingleThreadedExecutor();
+            this->executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
             this->executor_->add_node(this->controller_);
-            this->execTh_ = new std::thread(vehicle_interfaces::SpinExecutor, this->executor_, "controller", 1000.0);
+            this->execTh_ = vehicle_interfaces::make_unique_thread(vehicle_interfaces::SpinExecutor, this->executor_, conInfo.node_name, 1000.0);
         }
 
         // Service client node.
         this->reqClientNode_ = rclcpp::Node::make_shared(params->nodeName + "_client");
 
         {
-            auto client = this->reqClientNode_->create_client<vehicle_interfaces::srv::ControllerInfoReg>(params->controlService + "_Reg");
+            auto client = this->reqClientNode_->create_client<vehicle_interfaces::srv::ControllerInfoReg>(params->controllerRegService);
             bool stopF = false;
             vehicle_interfaces::ConnToService(client, stopF, std::chrono::milliseconds(5000), -1);
 
@@ -527,12 +530,6 @@ CONTROLSERVER_TAG:
             delete this->idclientTm_;
         }
         // Destroy executor.
-        if (this->execTh_ != nullptr)
-        {
-            this->executor_->cancel();
-            this->execTh_->join();
-            delete this->execTh_;
-            delete this->executor_;
-        }
+        this->executor_->cancel();
     }
 };
