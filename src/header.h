@@ -24,7 +24,7 @@
 #include "vehicle_interfaces/msg/chassis_info.hpp"
 #include "vehicle_interfaces/msg/control_chassis.hpp"
 #include "vehicle_interfaces/msg/controller_info.hpp"
-#include "vehicle_interfaces/msg/control_server.hpp"
+#include "vehicle_interfaces/msg/control_server_status.hpp"
 #include "vehicle_interfaces/msg/control_steering_wheel.hpp"
 
 #include "vehicle_interfaces/srv/controller_info_reg.hpp"
