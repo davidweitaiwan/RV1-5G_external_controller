@@ -154,9 +154,9 @@ private:
     std::atomic<bool> chassisInfoF_;// Check valid chassisInfo_.
 
     // Ying IDClient.
-    IDClient* idclient_;// ID client.
+    std::unique_ptr<IDClient> idclient_;// ID client.
     std::atomic<bool> idclientF_;// Check valid idclient_.
-    vehicle_interfaces::Timer* idclientTm_;// Call _idclientCbFunc().
+    std::unique_ptr<vehicle_interfaces::LiteTimer> idclientTm_;// Call _idclientCbFunc().
     std::atomic<double> idclientTmPeriod_ms_;// The period of idclient check.
     std::atomic<bool> idclientTmF_;// Enable/Disable idclient check.
 
@@ -330,9 +330,9 @@ private:
             try
             {
                 this->remoteF_ = false;
-                if (this->idclient_ == nullptr)
+                if (!this->idclient_)
                 {
-                    this->idclient_ = new IDClient(prop);
+                    this->idclient_ = std::make_unique<IDClient>(prop);
                     this->idclient_->setRecvMsgEventHandler(std::bind(&Controller::RecvMsgEventHandler, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3), true);
                     this->idclient_->connToServer();
                     this->idclient_->regToServer(params_->externalID);
@@ -340,8 +340,7 @@ private:
                 }
                 else
                 {
-                    delete this->idclient_;
-                    this->idclient_ = new IDClient(prop);
+                    this->idclient_.reset(new IDClient(prop));
                     this->idclient_->setRecvMsgEventHandler(std::bind(&Controller::RecvMsgEventHandler, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3), true);
                     this->idclient_->connToServer();
                     this->idclient_->regToServer(params_->externalID);
@@ -350,9 +349,8 @@ private:
             }
             catch (...)
             {
-                if (this->idclient_ != nullptr)
-                    delete this->idclient_;
-                this->idclient_ = nullptr;
+                if (this->idclient_)
+                    this->idclient_.reset();
                 this->idclientF_ = false;
                 RCLCPP_ERROR(this->get_logger(), "[Controller::_idclientCbFunc] Caught unexpected error.");
             }
@@ -405,9 +403,7 @@ public:
         rclcpp::Node(params->nodeName), 
         params_(params), 
         chassisInfoF_(false), 
-        idclient_(nullptr), 
         idclientF_(false), 
-        idclientTm_(nullptr), 
         idclientTmPeriod_ms_(0), 
         idclientTmF_(false), 
         remoteF_(false), 
@@ -427,7 +423,7 @@ public:
         // Create idclient timer.
         this->idclientTmPeriod_ms_ = params->period_ms;
         RCLCPP_INFO(this->get_logger(), "[Controller] Initializing idclient timer...");
-        this->idclientTm_ = new vehicle_interfaces::Timer(params->period_ms * 2, std::bind(&Controller::_idclientCbFunc, this));
+        this->idclientTm_ = vehicle_interfaces::make_unique_timer(params->period_ms * 2, std::bind(&Controller::_idclientCbFunc, this));
         this->idclientTm_->start();
 
         vehicle_interfaces::msg::ControllerInfo conInfo;
@@ -524,11 +520,8 @@ CONTROLSERVER_TAG:
         this->exitF_ = true;// All looping process will be braked if exitF_ set to true.
 
         // Destroy idclient timer.
-        if (this->idclientTm_ != nullptr)
-        {
+        if (this->idclientTm_)
             this->idclientTm_->destroy();
-            delete this->idclientTm_;
-        }
         // Destroy executor.
         this->executor_->cancel();
     }
